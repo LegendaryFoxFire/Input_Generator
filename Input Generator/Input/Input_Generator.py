@@ -1,5 +1,14 @@
 # John Bukoski
 
+# Notes:
+
+# Cloud systems are mainly Linux based! 90% Observed Statistic. https://www.enterpriseappstoday.com/stats/linux-statistics.html
+# Based off of common knowledge: 16 or 32 GB Ram average. (Thank goodness we don't have to worry about some of these other statistics!)
+# https://www.spec.org/cloud_iaas2018/results/ was an interesting introspection into the industry
+# https://www.researchgate.net/publication/232069216_Energy_Efficient_Scheduling_of_HPC_Jobs_on_Virtualized_Clusters_Using_Host_and_VM_Dynamic_Configuration || https://www.intel.com/content/dam/doc/white-paper/risc-migration-itanium-xeon-hp-mainframe-workloads-paper.pdf [1]
+# https://learn.microsoft.com/en-us/archive/blogs/nickmac/hyper-v-maximum-supported-configurations
+# https://serverfault.com/questions/196083/common-and-maximum-number-of-virtual-machines-per-server between 320 ~ 512? 
+
 import Text_Editing as io
 
 """ Input File Generator! 
@@ -13,9 +22,7 @@ import Text_Editing as io
 def Input_Generator():
     io.init()
     Machine_Class()
-    #Task_Class()
-
-
+    Task_Class(0, 0, False)
 
 
 # Machine Class
@@ -31,12 +38,8 @@ CPU_LIST        = ["ARM", "POWER", "RISCV", "X86"]
 CORE_LIST       = [1, 2, 4, 8, 16, 32, 64]
 MEMORY_LIST     = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144]
 BOOL_LIST       = ["yes", "no"]                     # I hate that I'm even typing this.
-# List Lengths
-CPU_DIST_LEN    = 4
-CORE_DIST_LEN   = 7
-MEMORY_DIST_LEN = 9 
-BOOL_DIST_LEN   = 2
 
+# Settings
 Machine_Number  = 350                               # Number of machines in cluster
 CPU_Dist        = [20, 10, 10, 60]                    # [%ARM, %POWER, %RISCV, %X86]
 Core_Dist       = [5, 1, 4, 10, 60, 10, 10]         # [%1Core, %2Core, %4Core, %8Core, %16Core, %32Core, %64Core]
@@ -64,27 +67,27 @@ def Machine_Error_Checks():
         error_list.append("Machine Number must be an integer!") 
     
     #CPU_Dist errors:
-    if(len(CPU_Dist) != CPU_DIST_LEN):
-        error_list.append(f"CPU_Dist must have {CPU_DIST_LEN} elements. It currently has {len(CPU_Dist)}")
+    if(len(CPU_Dist) != len(CPU_LIST)):
+        error_list.append(f"CPU_Dist must have {len(CPU_LIST)} elements. It currently has {len(CPU_Dist)}")
     if(Check_Distribution(CPU_Dist) != 100):
         error_list.append(f"CPU_Dist must values add to 100. Currently it adds to {Check_Distribution(CPU_Dist)}")
 
     #Core_Dist errors:
-    if(len(Core_Dist) != CORE_DIST_LEN):
-        error_list.append(f"Core_Dist must have {CORE_DIST_LEN} elements. It currently has {len(Core_Dist)}")
+    if(len(Core_Dist) != len(CORE_LIST)):
+        error_list.append(f"Core_Dist must have {len(CORE_LIST)} elements. It currently has {len(Core_Dist)}")
     if(Check_Distribution(Core_Dist) != 100):
         error_list.append(f"Core_Dist must values add to 100. Currently it adds to {Check_Distribution(Core_Dist)}")
 
     #Memory_Dist errors:
-    if(len(Memory_Dist) != MEMORY_DIST_LEN):
-        error_list.append(f"Memory_Dist must have {MEMORY_DIST_LEN} elements. It currently has {len(Memory_Dist)}")
+    if(len(Memory_Dist) != len(MEMORY_LIST)):
+        error_list.append(f"Memory_Dist must have {len(MEMORY_LIST)} elements. It currently has {len(Memory_Dist)}")
     if(Check_Distribution(Memory_Dist) != 100):
         error_list.append(f"Memory_Dist must values add to 100. Currently it adds to {Check_Distribution(Memory_Dist)}")
 
     #Bool_Dist errors:
 
-    if(len(Bool_Dist) != BOOL_DIST_LEN):
-        error_list.append(f"Bool_Dist must have {BOOL_DIST_LEN} elements. It currently has {len(Bool_Dist)}")
+    if(len(Bool_Dist) != len(BOOL_LIST)):
+        error_list.append(f"Bool_Dist must have {len(BOOL_LIST)} elements. It currently has {len(Bool_Dist)}")
     if(Check_Distribution(Bool_Dist) != 100):
         error_list.append(f"Bool_Dist must values add to 100. Currently it adds to {Check_Distribution(Bool_Dist)}")
     
@@ -130,7 +133,7 @@ def Create_Machine_Input():
                                 CPU_LIST[cpu_type], 
                                 CORE_LIST[core_type],
                                 MEMORY_LIST[memory_type],
-                                S_States,
+                                S_Adjust(core_type),
                                 P_States,
                                 C_States,
                                 MIPS,
@@ -142,7 +145,7 @@ def Create_Machine_Input():
     it's a loose connection: sure. But more cores typically are indicative
     of higher performance specs."""
 def S_Adjust(cores):
-    coefficient = (((HIGHER_STATE_COEFF - LOWER_STATE_COEFF) / CORE_DIST_LEN) * cores) + LOWER_STATE_COEFF
+    coefficient = (((HIGHER_STATE_COEFF - LOWER_STATE_COEFF) / len(CORE_LIST)) * cores) + LOWER_STATE_COEFF
     result = []
     for state in S_States:
         result.append(int(coefficient * state))
@@ -181,61 +184,126 @@ def Machine_Class_Writer(args):
 """ Define distributions for task parameters."""
 # Constants
 # =========
+
+EPOCH           = 2400000000
+MEM_BENCH_DUR   = 900000000
 SLA_LIST        = ["SLA0", "SLA1", "SLA2", "SLA3"]
 VM_LIST         = ["LINUX", "LINUX_RT", "WIN", "AIX"]
 
+
+
+NUM_TASKS = 3
+# Tasks: [Consistent, Memory, Stress]
 # Consistent Task
-C_Duration      = 2400000000
-C_Inter         = 6000
-C_Runtime       = 100000
-C_Memory        = 8
-
-# Memory Test 
-M_Duration      = 300000000
-M_Inter         = 6000
-M_Runtime       = 100000    # Long version will be duration time.
-M_Memory        = 8192
-
-# Stress Test
-S_Duration      = 300000000
-S_Inter         = 1
-S_Runtime       = 100000
-S_Memory        = 8
+Duration        = [  EPOCH, 300000000, 300000000]
+Inter           = [   6000,      6000, 1        ]
+Runtime         = [ 100000,    100000, 100000   ] 
+Memory          = [      8,      8192, 8        ]
 
 
+""" It's important to make the selections compatible """
+def Task_Errors(VM, CPU):
+    if(VM >= len(VM_LIST)):
+        print(f"{VM} is not a choice within the range of VM_List: \n{VM_LIST}")
+        if(CPU >= len(CPU_LIST)):
+            print(f"{CPU} is not a choice within the range of CPU_List: \n{CPU_LIST}")
+    else: 
+        if(VM_LIST[VM] == "AIX"):
+            return CPU_LIST[CPU] == "POWER"
+        if(VM_LIST[VM] == "WIN"):
+            return (CPU_LIST[CPU] == "X86" or CPU_LIST[CPU] == "ARM")
+        else:
+            return True
 
-
-
-def Task_Class():
-    for sla, time in enumerate(SLA_LIST):
-        Task_Pattern(sla, time)
+""" Gathers the inputs for pattern call"""
+def Task_Class(VM_Selection, CPU_Selection, GPU_Setting):
+    if(not Task_Errors(VM_Selection, CPU_Selection)):
+        print("There's a conflict in the selections! Make sure the VM and CPU selections are compatible")
+    else:
+        vm = VM_LIST[VM_Selection]
+        cpu = CPU_LIST[CPU_Selection]
+        gpu = "no"
+        if(GPU_Setting):
+            gpu = "yes"
+        for time, sla in enumerate(SLA_LIST):
+            Task_Pattern(time, sla, vm, cpu, gpu)
         
+""" Defines a testing pattern with patterns
+        for 40 minutes are normal load, constant popping in and out 10% load tasks. etc.
+        5 minutes in we want to do a 5 minute, 5 minute, 5 minute mem load.
+        20 minutes in we want a load test.
+        then 25 minutes we run both at the same time. 
+"""
+def Task_Pattern(time, sla, vm, cpu, gpu):
+    time *= EPOCH          # @+0 minutes.
+    
+    Consistent_Task(time, sla, vm, cpu, gpu, True)
+    time += Duration[1]    # @+5 minutes.
+    
+    Memory_Benchmark(time, sla, vm, cpu, gpu)
+    time += MEM_BENCH_DUR  # @+20 minutes.
+    
+    Load_Benchmark(time, sla, vm, cpu, gpu)
+    time += Duration[1]    # @+25 minutes.
 
-def Task_Pattern(sla, time):
-    Task(sla, time, )
-    #memory
-    #stress
-    #both
-
-def Task(sla, time, code):
-
-
-
-
-
-
-
-
-
-# for 40 minutes are normal load, constant popping in and out 10% load tasks. etc.
-# 5 minutes in we want to do a 5 minute, 5 minute, 5 minute mem load.
-# 20 minutes in we want a load test.
-# then 25 minutes we run both at the same time. 
-
+    Memory_Benchmark(time, sla, vm, cpu, gpu)
+    Load_Benchmark(time, sla, vm, cpu, gpu)
 
 
+""" A task pattern that represents normal load """
+def Consistent_Task(time, sla, vm, cpu, gpu, isRandom):
+    args = [time,
+            time + Duration[0],
+            Inter[0],
+            Runtime[0],
+            Memory[0],
+            vm,
+            gpu,
+            sla,
+            cpu,
+            "STREAM"]
+    if(isRandom):
+        for item in VM_LIST:
+            args[5] = item
+            Task_Class_Writer(args)
+    else:
+        Task_Class_Writer(args)
 
+        
+def Memory_Benchmark(time, sla, vm, cpu, gpu):
+    #15 Minute time duration (5 minute intervals)
+    for i in range(0, MEM_BENCH_DUR, Duration[1]):
+        time_incr = time + i
+        runtime = Runtime[1]
 
+        # Higher stress in middle section
+        if(i%2 == 1):
+            runtime = Duration[1]
+
+        args = [time_incr,
+                time_incr + Duration[1],
+                Inter[1],
+                runtime,
+                Memory[1],
+                vm,
+                gpu,
+                sla,
+                cpu,
+                "HPC"]
+        Task_Class_Writer(args)
+
+def Load_Benchmark(time, sla, vm, cpu, gpu):
+    args = [time,
+            time + Duration[2],
+            Inter[2],
+            Runtime[2],
+            Memory[2],
+            vm,
+            gpu,
+            sla,
+            cpu,
+            "WEB"]
+    Task_Class_Writer(args)
 
 
 """ Task Class Writer:
@@ -272,28 +340,5 @@ def Task_Class_Writer(args):
     io.write("}")
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #Execute
 Input_Generator()
-
-
